@@ -4812,7 +4812,7 @@ Instruction *InstCombinerImpl::visitFreeze(FreezeInst &I) {
   //
   // TODO: This could use getBinopAbsorber() / getBinopIdentity() to avoid
   //       duplicating logic for binops at least.
-  auto getUndefReplacement = [&I](Type *Ty) {
+  auto getConstantReplacement = [&I](Type *Ty) {
     Constant *BestValue = nullptr;
     Constant *NullValue = Constant::getNullValue(Ty);
     for (const auto *U : I.users()) {
@@ -4831,18 +4831,38 @@ Instruction *InstCombinerImpl::visitFreeze(FreezeInst &I) {
     return BestValue;
   };
 
+  auto getValueReplacement = [&I, &AC = this->AC, &DT = this->DT]() -> Value * {
+    Value *BestValue = nullptr;
+    for (const auto *U : I.users()) {
+      Value *C = nullptr;
+      Value *SelectArgument = nullptr;
+      if (match(U, m_c_Select(m_Specific(&I), m_Value(SelectArgument))) &&
+          isGuaranteedNotToBeUndefOrPoison(SelectArgument, &AC, &I, &DT))
+        C = SelectArgument;
+
+      if (!BestValue)
+        BestValue = C;
+      else if (BestValue != C)
+        return nullptr;
+    }
+    return BestValue;
+  };
+
   if (match(Op0, m_Undef())) {
     // Don't fold freeze(undef/poison) if it's used as a vector operand in
     // a shuffle. This may improve codegen for shuffles that allow
     // unspecified inputs.
     if (isUsedWithinShuffleVector(&I))
       return nullptr;
-    return replaceInstUsesWith(I, getUndefReplacement(I.getType()));
+    if (auto *Replace = getValueReplacement())
+      return replaceInstUsesWith(I, Replace);
+    else
+      return replaceInstUsesWith(I, getConstantReplacement(I.getType()));
   }
 
   Constant *C;
   if (match(Op0, m_Constant(C)) && C->containsUndefOrPoisonElement()) {
-    Constant *ReplaceC = getUndefReplacement(I.getType()->getScalarType());
+    Constant *ReplaceC = getConstantReplacement(I.getType()->getScalarType());
     return replaceInstUsesWith(I, Constant::replaceUndefsWith(C, ReplaceC));
   }
 
