@@ -246,11 +246,13 @@ private:
   Type convertComplexType(ComplexType type) const;
 
   /// Convert a memref type into an LLVM type that captures the relevant data.
-  Type convertMemRefType(MemRefType type) const;
+  LogicalResult convertMemRefType(MemRefType type,
+                                  SmallVectorImpl<Type> &result) const;
 
   /// Convert an unranked memref type to an LLVM type that captures the
   /// runtime rank and a pointer to the static ranked memref desc
-  Type convertUnrankedMemRefType(UnrankedMemRefType type) const;
+  LogicalResult convertUnrankedMemRefType(UnrankedMemRefType type,
+                                          SmallVectorImpl<Type> &result) const;
 
   /// Convert a memref type to a bare pointer to the memref element type.
   Type convertMemRefToBarePtr(BaseMemRefType type) const;

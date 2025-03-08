@@ -126,9 +126,22 @@ LLVMTypeConverter::LLVMTypeConverter(MLIRContext *ctx,
   addConversion([&](FunctionType type) { return convertFunctionType(type); });
   addConversion([&](IndexType type) { return convertIndexType(type); });
   addConversion([&](IntegerType type) { return convertIntegerType(type); });
-  addConversion([&](MemRefType type) { return convertMemRefType(type); });
   addConversion(
-      [&](UnrankedMemRefType type) { return convertUnrankedMemRefType(type); });
+      [&](MemRefType type,
+          SmallVectorImpl<Type> &result) -> std::optional<LogicalResult> {
+        LogicalResult status = convertMemRefType(type, result);
+        if (failed(status))
+          return std::nullopt;
+        return success();
+      });
+  addConversion(
+      [&](UnrankedMemRefType type,
+          SmallVectorImpl<Type> &result) -> std::optional<LogicalResult> {
+        LogicalResult status = convertUnrankedMemRefType(type, result);
+        if (failed(status))
+          return std::nullopt;
+        return success();
+      });
   addConversion([&](VectorType type) -> std::optional<Type> {
     FailureOr<Type> llvmType = convertVectorType(type);
     if (failed(llvmType))
@@ -533,14 +546,15 @@ LLVMTypeConverter::getMemRefDescriptorSize(MemRefType type,
 
 /// Converts MemRefType to LLVMType. A MemRefType is converted to a struct that
 /// packs the descriptor fields as defined by `getMemRefDescriptorFields`.
-Type LLVMTypeConverter::convertMemRefType(MemRefType type) const {
-  // When converting a MemRefType to a struct with descriptor fields, do not
-  // unpack the `sizes` and `strides` arrays.
-  SmallVector<Type, 5> types =
-      getMemRefDescriptorFields(type, /*unpackAggregates=*/false);
-  if (types.empty())
-    return {};
-  return LLVM::LLVMStructType::getLiteral(&getContext(), types);
+LogicalResult
+LLVMTypeConverter::convertMemRefType(MemRefType type,
+                                     SmallVectorImpl<Type> &result) const {
+  SmallVector<Type, 5> fields =
+      getMemRefDescriptorFields(type, /*unpackAggregates=*/true);
+  if (fields.empty())
+    return failure();
+  llvm::append_range(result, fields);
+  return success();
 }
 
 /// Convert an unranked memref type into a list of non-aggregate LLVM IR types
@@ -563,12 +577,12 @@ unsigned LLVMTypeConverter::getUnrankedMemRefDescriptorSize(
          llvm::divideCeil(getPointerBitwidth(space), 8);
 }
 
-Type LLVMTypeConverter::convertUnrankedMemRefType(
-    UnrankedMemRefType type) const {
+LogicalResult LLVMTypeConverter::convertUnrankedMemRefType(
+    UnrankedMemRefType type, SmallVectorImpl<Type> &result) const {
   if (!convertType(type.getElementType()))
-    return {};
-  return LLVM::LLVMStructType::getLiteral(&getContext(),
-                                          getUnrankedMemRefDescriptorFields());
+    return failure();
+  llvm::append_range(result, getUnrankedMemRefDescriptorFields());
+  return success();
 }
 
 FailureOr<unsigned>
