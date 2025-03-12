@@ -30,13 +30,13 @@ class LLVMPointerType;
 /// Helper class to produce LLVM dialect operations extracting or inserting
 /// elements of a MemRef descriptor. Wraps a Value pointing to the descriptor.
 /// The Value may be null, in which case none of the operations are valid.
-class MemRefDescriptor : public StructBuilder {
+class MemRefDescriptor {
 public:
   /// Construct a helper for the given descriptor value.
-  explicit MemRefDescriptor(Value descriptor);
+  explicit MemRefDescriptor(ValueRange descriptor);
   /// Builds IR creating a `poison` value of the descriptor type.
   static MemRefDescriptor poison(OpBuilder &builder, Location loc,
-                                 Type descriptorType);
+                                 TypeRange descriptorTypes);
   /// Builds IR creating a MemRef descriptor that represents `type` and
   /// populates it with static shape and stride information extracted from the
   /// type.
@@ -98,28 +98,21 @@ public:
   Value bufferPtr(OpBuilder &builder, Location loc,
                   const LLVMTypeConverter &converter, MemRefType type);
 
-  /// Builds IR populating a MemRef descriptor structure from a list of
-  /// individual values composing that descriptor, in the following order:
-  /// - allocated pointer;
-  /// - aligned pointer;
-  /// - offset;
-  /// - <rank> sizes;
-  /// - <rank> strides;
-  /// where <rank> is the MemRef rank as provided in `type`.
-  static Value pack(OpBuilder &builder, Location loc,
-                    const LLVMTypeConverter &converter, MemRefType type,
-                    ValueRange values);
-
-  /// Builds IR extracting individual elements of a MemRef descriptor structure
-  /// and returning them as `results` list.
-  static void unpack(OpBuilder &builder, Location loc, Value packed,
-                     MemRefType type, SmallVectorImpl<Value> &results);
+  int64_t getRank();
 
   /// Returns the number of non-aggregate values that would be produced by
   /// `unpack`.
   static unsigned getNumUnpackedValues(MemRefType type);
 
+  ValueRange getElements() { return elements; }
+
+  /*implicit*/ operator ValueRange() { return elements; }
+
 private:
+  SmallVector<Value> elements;
+  //Value allocatedPtrVal, alignedPtrVal, offsetVal;
+  //SmallVector<Value> sizeVals, strideVals;
+
   // Cached index type.
   Type indexType;
 };
